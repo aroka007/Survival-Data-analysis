@@ -1,0 +1,443 @@
+/**************************************************************************/ 
+MAT 8446 - SURVIVAL DATA ANALYSIS PROJECT				
+/**************************************************************************/ 
+ 
+FILENAME REFFILE '/folders/myfolders/uis.xlsx'; 
+ 
+PROC IMPORT DATAFILE=REFFILE REPLACE  
+	DBMS=XLSX 
+	OUT=UIS0; 
+	GETNAMES=YES; 
+RUN;  
+ 
+PROC PRINT DATA= UIS0 (OBS=10); 
+ 
+PROC CONTENTS DATA = UIS0; 
+ 
+/*FIX THE FORMAT FOR VARIABLES */ 
+ 
+DATA UIS1; 
+ SET UIS0; 
+ age0= INPUT(age, 8.); 
+ beck0= INPUT(beck, 8.); 
+ ndrugtx0= INPUT(ndrugtx, 8.); 
+ DROP AGE BECK NDRUGTX; 
+ RENAME age0= age  
+beck0= beck ndrugtx0=ndrugtx; 
+RUN; 
+ 
+PROC PRINT DATA= UIS1 (OBS=10); 
+PROC CONTENTS DATA= UIS1; 
+ 
+ 
+/*CHECK FOR MISSING VALUES */ 
+PROC FREQ DATA=UIS1; 
+TABLES HERCOC IVHX RACE; 
+RUN; 
+ 
+PROC MEANS DATA=UIS1 NMISS N; 
+RUN; 
+ 
+/*REMOVE ROWS WITH MISSING VALUES */ 
+DATA UIS; 
+ SET UIS1; 
+ IF HERCOC = '' THEN DELETE; 
+ IF IVHX = '' THEN DELETE; 
+ IF RACE = . THEN DELETE; 
+ IF AGE = . THEN DELETE; 
+ IF BECK = . THEN DELETE; 
+ IF NDRUGTX = . THEN DELETE; 
+  
+RUN; 
+ 
+/*CHECK IF MISSING VALUES REMOVED */ 
+PROC FREQ DATA=UIS; 
+TABLES HERCOC IVHX RACE; 
+RUN; 
+ 
+PROC MEANS DATA=UIS NMISS N; 
+RUN; 
+*ok no missing values; 
+ 
+proc print data=uis (obs=50); 
+ 
+*1; 
+ 
+PROC LIFETEST DATA=UIS METHOD=KM PLOTS=S(CL ATRISK(ATRISKTICK)) TIMELIST = 365 730 1095 1460 REDUCEOUT OUTSURV=out1 CONFTYPE=LOGLOG; 
+  TITLE 'Comparison of Multiple Survival Functions'; 
+  TIME TIME*CENSOR(0); 
+  STRATA TREAT / ADJUST = TUKEY ; 
+RUN; 
+ 
+PROC PRINT DATA=out1; 
+  TITLE '1-, 2-, 3-, and 4-Year Survival Estimates with CIs'; 
+RUN; 
+ 
+ 
+*2; 
+ 
+PROC MEANS DATA= UIS; 
+CLASS TREAT; 
+VAR AGE; 
+RUN; 
+ 
+ 
+/* CRUDE MODEL*/ 
+PROC PHREG DATA= UIS; 
+ TITLE 'MODEL WITH ONE CONTINUOUS COVARIATE- CRUDE'; 
+ CLASS TREAT; 
+ MODEL TIME*CENSOR(0)=TREAT/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+/* MAIN EFFECTS MODEL*/ 
+PROC PHREG DATA= UIS; 
+ TITLE 'MODEL WITH ONE CONTINUOUS COVARIATE-MAIN EFFECTS'; 
+ CLASS TREAT; 
+ MODEL TIME*CENSOR(0)= TREAT AGE/ RL=WALD ties=exact ; 
+RUN; 
+ 
+/* INTERACTION MODEL*/ 
+PROC PHREG DATA= UIS; 
+ TITLE 'MODEL WITH ONE CONTINUOUS COVARIATE- INTERACTION'; 
+ CLASS TREAT; 
+ MODEL TIME*CENSOR(0)= TREAT AGE TREAT*AGE/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+  
+ 
+*3; 
+ 
+*SITE-Categorical; 
+ 
+/* CRUDE MODEL*/ 
+PROC PHREG DATA= UIS ; 
+ TITLE 'MODEL WITH ONE CATEGORICAL COVARIATE- CRUDE'; 
+ CLASS TREAT; 
+ MODEL TIME*CENSOR(0)=TREAT/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+/* MAIN EFFECTS MODEL*/ 
+PROC PHREG DATA= UIS; 
+ TITLE 'MODEL WITH ONE CATEGORICAL COVARIATE-MAIN EFFECTS'; 
+ CLASS TREAT SIT; 
+ MODEL TIME*CENSOR(0)= TREAT SIT/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+/* INTERACTION MODEL*/ 
+PROC PHREG DATA= UIS; 
+ TITLE 'MODEL WITH ONE CATEGORICAL COVARIATE- INTERACTION'; 
+ CLASS TREAT SIT; 
+ MODEL TIME*CENSOR(0)= TREAT SIT TREAT*SIT/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+ 
+*4; 
+ 
+*The following runs the forward selection procedure; 
+PROC PHREG DATA=UIS; 
+ TITLE "Stepwise Selection"; 
+ CLASS TREAT RACE HERCOC IVHX; 
+ MODEL TIME*CENSOR(0)= TREAT RACE AGE BECK HERCOC IVHX NDRUGTX SIT LOS / SELECTION=STEPWISE SLENTRY=0.20 SLSTAY=0.20 DETAILS; 
+RUN; 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "Final Selected Main effects"; 
+ CLASS TREAT RACE IVHX; 
+ MODEL TIME*CENSOR(0)= TREAT RACE AGE IVHX NDRUGTX SIT LOS/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+*Interaction forward selection procedure; 
+PROC PHREG DATA=UIS; 
+ TITLE "Stepwise Selection"; 
+ CLASS TREAT RACE IVHX; 
+ MODEL TIME*CENSOR(0)= TREAT RACE AGE IVHX NDRUGTX SIT LOS  
+/*        AGE*TREAT AGE*RACE AGE*IVHX AGE*NDRUGTX AGE*SIT AGE*LOS */ 
+/*        RACE*TREAT RACE*IVHX RACE*NDRUGTX RACE*SIT RACE*LOS */ 
+       LOS*IVHX SIT*TREAT SIT*IVHX SIT*NDRUGTX SIT*LOS AGE*SIT RACE*SIT/ SELECTION=STEPWISE SLENTRY=0.1 SLSTAY=0.1 DETAILS; 
+RUN; 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "Final Selected"; 
+ CLASS TREAT RACE IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS  
+         LOS*IVHX AGE*SIT NDRUGTX*SIT/ RL=WALD TIES=EXACT; 
+RUN; 
+PROC PHREG DATA=UIS; 
+ TITLE "Final Selected-remove los*ivhx"; 
+ CLASS TREAT RACE IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS  
+         AGE*SIT NDRUGTX*SIT/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "Final Selected-remove los*ivhx"; 
+ CLASS TREAT RACE IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS  
+         AGE*SIT NDRUGTX*SIT/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "Final Selected-remove age*sit"; 
+ CLASS TREAT RACE IVHX SIT; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+*FINAL MODEL; 
+PROC PHREG DATA=UIS; 
+ TITLE "Final Selected-remove ivhx"; 
+ CLASS RACE SIT IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+********************************* 
+ 
+CHECK FOR MODEL ADEQUACY 
+ 
+*********************************; 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "with race-time"; 
+ CLASS RACE SIT IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS z/ RL=WALD TIES=EXACT; 
+ z = time*race; 
+RUN; 
+ 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "with age-time"; 
+ CLASS RACE SIT IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS z/ RL=WALD TIES=EXACT; 
+ z = time*age; 
+RUN; 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "with ivhx-time"; 
+ CLASS RACE SIT IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS z/ RL=WALD TIES=EXACT; 
+ z = time*ivhx; 
+RUN; 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "with ndrugtx-time"; 
+ CLASS RACE SIT IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS z/ RL=WALD TIES=EXACT; 
+ z = time*ndrugtx; 
+RUN; 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "with sit-time"; 
+ CLASS RACE SIT IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS z/ RL=WALD TIES=EXACT; 
+ z = time*sit; 
+RUN; 
+ 
+PROC PHREG DATA=UIS; 
+ TITLE "with los-time"; 
+ CLASS RACE SIT IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS z/ RL=WALD; 
+ z = time*los; 
+RUN; 
+ 
+ 
+**PH Graphs check; 
+ 
+proc means data=uis  q1 median q3 ; 
+ var age ndrugtx los; 
+run; 
+*create stra for continuous variable; 
+data UIS00; 
+ set UIS; 
+ if age ne . and age<27 then agegroup =1; 
+ if 27<=age<32 then agegroup =2; 
+ if 32<=age<37 then agegroup =3; 
+ if 37<=age then agegroup =4; 
+ if ndrugtx ne . and ndrugtx<1 then ndrugtxgroup =1; 
+ if 1<=ndrugtx<3 then ndrugtxgroup =2; 
+ if 3<=ndrugtx<6 then ndrugtxgroup =3; 
+ if 6<=ndrugtx then ndrugtxgroup =4; 
+ if los ne . and los<45 then losgroup =1; 
+ if 45<=los<87 then losgroup =2; 
+ if 87<=los<151 then losgroup =3; 
+ if 151<=los then losgroup =4; 
+run; 
+****PH graphs*****; 
+PROC LIFETEST DATA=uis00 PLOTS=(S) METHOD = KM; 
+TITLE "KM Curves by Age Group"; 
+TIME TIME*CENSOR(0); 
+STRATA agegroup; 
+RUN; 
+ 
+PROC LIFETEST DATA=uis00 PLOTS=(S) METHOD = KM; 
+TITLE "KM Curves by Ndrugtx Group"; 
+TIME TIME*CENSOR(0); 
+STRATA ndrugtxgroup; 
+RUN; 
+ 
+PROC LIFETEST DATA=uis00 PLOTS=(S) METHOD = KM; 
+TITLE "KM Curves by Losgroup"; 
+TIME TIME*CENSOR(0); 
+STRATA losgroup; 
+RUN; 
+*no need to check race; 
+PROC LIFETEST DATA=uis00 PLOTS=(S) METHOD = KM; 
+TITLE "KM Curves by race"; 
+TIME TIME*CENSOR(0); 
+STRATA race; 
+RUN; 
+ 
+PROC LIFETEST DATA=uis00 PLOTS=(S) METHOD = KM; 
+TITLE "KM Curves by IVHX"; 
+TIME TIME*CENSOR(0); 
+STRATA ivhx; 
+RUN; 
+ 
+PROC LIFETEST DATA=uis00 PLOTS=(S) METHOD = KM; 
+TITLE "KM Curves by site"; 
+TIME TIME*CENSOR(0); 
+STRATA sit; 
+RUN; 
+ 
+**Schoenfeld Residuals**; 
+*FINAL MODEL; 
+PROC PHREG DATA=uis; 
+ TITLE "Final Model"; 
+ CLASS RACE SIT IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS/ TIES=EXACT; 
+OUTPUT OUT=schoen RESSCH=schrace schage schivhx schndrugtx schsit scchlos; 
+RUN; 
+ 
+PROC LOESS DATA = schoen; 
+TITLE "Schoenfeld Residuals for Age vs. Time"; 
+MODEL schage=time / SMOOTH=(0.2 0.4 0.6 0.8); 
+RUN; 
+PROC LOESS DATA = schoen; 
+TITLE "Schoenfeld Residuals for IVHX vs. Time"; 
+MODEL schivhx=time / SMOOTH=(0.2 0.4 0.6 0.8); 
+RUN; 
+PROC LOESS DATA = schoen; 
+TITLE "Schoenfeld Residuals for Ndrugtx vs. Time"; 
+MODEL schndrugtx=time / SMOOTH=(0.2 0.4 0.6 0.8); 
+RUN; 
+PROC LOESS DATA = schoen; 
+TITLE "Schoenfeld Residuals for Site vs. Time"; 
+MODEL schsit=time / SMOOTH=(0.2 0.4 0.6 0.8); 
+RUN; 
+PROC LOESS DATA = schoen; 
+TITLE "Schoenfeld Residuals for Los vs. Time"; 
+MODEL scchlos=time / SMOOTH=(0.2 0.4 0.6 0.8); 
+RUN; 
+*######################## 
+*Residual check; 
+*#########################; 
+PROC PHREG DATA=UIS; 
+ TITLE 'Proportional Hazards Model'; 
+ CLASS RACE SIT IVHX; 
+ MODEL TIME*CENSOR(0)= RACE AGE IVHX NDRUGTX SIT LOS / RL=WALD; 
+ OUTPUT OUT=resids LOGSURV=lsurv RESDEV=deviance WTRESSCH= rrace rage rivhx rdrugtx rsit rlos; 
+RUN; 
+ 
+/* The following gets the negative of the log of the survival estimate for the Extended Cox-Snell Residual*/ 
+DATA resids; 
+SET resids; 
+neglsurv = -1*lsurv; 
+RUN; 
+ 
+/* The following gets the negative ln of the survival estimates based on Kaplan-Meier */ 
+PROC LIFETEST DATA=resids OUTS=out1 NOPRINT; 
+TIME neglsurv*censor(0); 
+RUN; 
+ 
+DATA out1; 
+SET out1; 
+neglkm = -1*log(survival); 
+RUN; 
+ 
+/* The following creates the residual plot for the Extended Cox-Snell Residuals */ 
+PROC SGPLOT DATA=out1; 
+TITLE 'Cox-Snell Residuals vs. -ln(KM Estimate of Survival)'; 
+SCATTER Y= neglsurv X=neglkm; 
+RUN; 
+ 
+/* The following creates the Deviance Residual Plot */ 
+/* PROC SGPLOT DATA=resids; */ 
+/* TITLE 'Deviance Residuals vs. Time'; */ 
+/* SCA deviance*survtime; */ 
+/* PLOT deviance*age; */ 
+/* RUN; */ 
+ 
+/* The following creates the Weighted Schoenfeld Residual Plot */ 
+ 
+%macro time(label= ,Y= ,X= ); 
+PROC SGPLOT DATA=resids; 
+TITLE "Weighted Schoenfeld Residuals vs. &label"; 
+SCATTER Y=&Y X=&X; 
+RUN; 
+%mend; 
+ 
+%time(label=Age,Y=rage , X=age ); 
+%time(label=Race,Y=rrace , X=race ); 
+%time(label=ivhx,Y=rivhx , X=ivhx ); 
+%time(label=Ndrugtx,Y=Rdrugtx , X=Ndrugtx ); 
+%time(label=Site,Y=rsit , X=sit ); 
+%time(label=Los,Y=rlos , X=los ); 
+ 
+ 
+******************************** 
+   	 TESTING-FINAL MODEL 
+********************************; 
+*Testing individuals; 
+******************************************; 
+PROC PHREG DATA= UIS; 
+ TITLE 'TREAT'; 
+ CLASS TREAT ; 
+ MODEL TIME*CENSOR(0)= TREAT/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+PROC PHREG DATA= UIS; 
+ TITLE 'RACE'; 
+ CLASS RACE ; 
+ MODEL TIME*CENSOR(0)= RACE/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+PROC PHREG DATA= UIS; 
+ TITLE 'HERCOC'; 
+ CLASS HERCOC ; 
+ MODEL TIME*CENSOR(0)= HERCOC/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+PROC PHREG DATA= UIS; 
+ TITLE 'IVHX'; 
+ CLASS IVHX ; 
+ MODEL TIME*CENSOR(0)= IVHX/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+PROC PHREG DATA= UIS; 
+ TITLE 'AGE'; 
+ MODEL TIME*CENSOR(0)= AGE/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+PROC PHREG DATA= UIS; 
+ TITLE 'BECK'; 
+ MODEL TIME*CENSOR(0)= BECK/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+PROC PHREG DATA= UIS; 
+ TITLE 'NDRUGTX'; 
+ MODEL TIME*CENSOR(0)= NDRUGTX/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+PROC PHREG DATA= UIS; 
+ TITLE 'SITE'; 
+ MODEL TIME*CENSOR(0)= SIT/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+PROC PHREG DATA= UIS; 
+ TITLE 'LENGTH OF TX'; 
+ MODEL TIME*CENSOR(0)= LOS/ RL=WALD TIES=EXACT; 
+RUN; 
+ 
+********************** END ***************************; 
+
+
+
